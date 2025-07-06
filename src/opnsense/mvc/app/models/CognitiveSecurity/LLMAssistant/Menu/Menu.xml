@@ -1,0 +1,5 @@
+<menu>
+    <Interfaces order="20">
+        <LLMAssistant VisibleName="LLM Assistant" cssClass="fa fa-robot" url="/ui/llmassistant/"/>
+    </Interfaces>
+</menu>

@@ -1,0 +1,10 @@
+<acl>
+    <page-interfaces-llmassistant>
+        <name>WebCfg - Interfaces: LLM Security Assistant</name>
+        <description>Allow access to the LLM Security Assistant</description>
+        <patterns>
+            <pattern>ui/llmassistant/*</pattern>
+            <pattern>api/llmassistant/*</pattern>
+        </patterns>
+    </page-interfaces-llmassistant>
+</acl>

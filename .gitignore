@@ -1,0 +1,23 @@
+# Build files
+/work/
+*.txz
+*.pkg
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# API keys and secrets
+*.key
+*.pem
+secrets/

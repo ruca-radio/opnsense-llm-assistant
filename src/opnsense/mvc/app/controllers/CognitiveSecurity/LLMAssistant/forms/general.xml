@@ -1,0 +1,101 @@
+<form>
+    <tab id="general" description="General Settings">
+        <field>
+            <id>llmassistant.general.enabled</id>
+            <label>Enable LLM Assistant</label>
+            <type>checkbox</type>
+            <help>Enable or disable the LLM Security Assistant</help>
+        </field>
+        <field>
+            <id>llmassistant.general.api_provider</id>
+            <label>API Provider</label>
+            <type>dropdown</type>
+            <help>Select your LLM API provider</help>
+        </field>
+        <field>
+            <id>llmassistant.general.api_key</id>
+            <label>API Key</label>
+            <type>password</type>
+            <help>Enter your API key (stored encrypted)</help>
+        </field>
+        <field>
+            <id>llmassistant.general.api_endpoint</id>
+            <label>API Endpoint</label>
+            <type>text</type>
+            <help>API endpoint URL (leave default unless using custom endpoint)</help>
+            <advanced>true</advanced>
+        </field>
+        <field>
+            <id>llmassistant.general.model_name</id>
+            <label>Model Name</label>
+            <type>text</type>
+            <help>LLM model to use (e.g., claude-3-haiku, gpt-3.5-turbo)</help>
+        </field>
+        <field>
+            <id>llmassistant.general.max_tokens</id>
+            <label>Max Response Tokens</label>
+            <type>text</type>
+            <help>Maximum tokens in LLM response (100-8000)</help>
+            <advanced>true</advanced>
+        </field>
+        <field>
+            <id>llmassistant.general.temperature</id>
+            <label>Temperature</label>
+            <type>text</type>
+            <help>Response randomness (0-1, lower = more focused)</help>
+            <advanced>true</advanced>
+        </field>
+    </tab>
+    <tab id="features" description="Features">
+        <field>
+            <id>llmassistant.features.config_review</id>
+            <label>Configuration Review</label>
+            <type>checkbox</type>
+            <help>Enable AI-powered configuration security reviews</help>
+        </field>
+        <field>
+            <id>llmassistant.features.incident_reports</id>
+            <label>Incident Reports</label>
+            <type>checkbox</type>
+            <help>Enable AI-generated incident reports</help>
+        </field>
+        <field>
+            <id>llmassistant.features.rule_assistant</id>
+            <label>Rule Assistant</label>
+            <type>checkbox</type>
+            <help>Enable natural language firewall rule creation (experimental)</help>
+        </field>
+        <field>
+            <id>llmassistant.features.learning_mode</id>
+            <label>Learning Mode</label>
+            <type>checkbox</type>
+            <help>Enable Q&A learning assistant</help>
+        </field>
+    </tab>
+    <tab id="security" description="Security Settings">
+        <field>
+            <id>llmassistant.security.rate_limit</id>
+            <label>Rate Limit</label>
+            <type>text</type>
+            <help>Maximum API calls per minute (1-100)</help>
+        </field>
+        <field>
+            <id>llmassistant.security.audit_logging</id>
+            <label>Audit Logging</label>
+            <type>checkbox</type>
+            <help>Log all LLM interactions for security audit</help>
+        </field>
+        <field>
+            <id>llmassistant.security.sandbox_rules</id>
+            <label>Sandbox Rules</label>
+            <type>checkbox</type>
+            <help>Test generated rules in sandbox before applying</help>
+        </field>
+        <field>
+            <id>llmassistant.security.require_approval</id>
+            <label>Require Approval</label>
+            <type>checkbox</type>
+            <help>Require human approval for all AI suggestions</help>
+        </field>
+    </tab>
+</form>

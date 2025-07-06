@@ -1,0 +1,89 @@
+<model>
+    <mount>//CognitiveSecurity/LLMAssistant</mount>
+    <description>LLM Security Assistant for OPNsense</description>
+    <version>1.0.0</version>
+    <items>
+        <general>
+            <enabled type="BooleanField">
+                <default>0</default>
+                <Required>Y</Required>
+            </enabled>
+            <api_provider type="OptionField">
+                <default>openrouter</default>
+                <OptionValues>
+                    <openrouter>OpenRouter</openrouter>
+                    <openai>OpenAI</openai>
+                    <anthropic>Anthropic</anthropic>
+                    <local>Local Model</local>
+                </OptionValues>
+                <Required>Y</Required>
+            </api_provider>
+            <api_key type="TextField">
+                <default></default>
+                <Required>N</Required>
+                <mask>password</mask>
+            </api_key>
+            <api_endpoint type="TextField">
+                <default>https://openrouter.ai/api/v1</default>
+                <Required>N</Required>
+                <ValidationMessage>Must be a valid URL</ValidationMessage>
+            </api_endpoint>
+            <model_name type="TextField">
+                <default>anthropic/claude-3-haiku</default>
+                <Required>Y</Required>
+            </model_name>
+            <max_tokens type="IntegerField">
+                <default>2000</default>
+                <MinimumValue>100</MinimumValue>
+                <MaximumValue>8000</MaximumValue>
+                <Required>Y</Required>
+            </max_tokens>
+            <temperature type="TextField">
+                <default>0.3</default>
+                <Required>Y</Required>
+                <ValidationMessage>Must be between 0 and 1</ValidationMessage>
+            </temperature>
+        </general>
+        <features>
+            <config_review type="BooleanField">
+                <default>1</default>
+                <Required>Y</Required>
+            </config_review>
+            <incident_reports type="BooleanField">
+                <default>1</default>
+                <Required>Y</Required>
+            </incident_reports>
+            <rule_assistant type="BooleanField">
+                <default>0</default>
+                <Required>Y</Required>
+            </rule_assistant>
+            <learning_mode type="BooleanField">
+                <default>1</default>
+                <Required>Y</Required>
+            </learning_mode>
+        </features>
+        <security>
+            <rate_limit type="IntegerField">
+                <default>10</default>
+                <MinimumValue>1</MinimumValue>
+                <MaximumValue>100</MaximumValue>
+                <Required>Y</Required>
+                <help>Maximum API calls per minute</help>
+            </rate_limit>
+            <audit_logging type="BooleanField">
+                <default>1</default>
+                <Required>Y</Required>
+            </audit_logging>
+            <sandbox_rules type="BooleanField">
+                <default>1</default>
+                <Required>Y</Required>
+                <help>Test generated rules in sandbox before applying</help>
+            </sandbox_rules>
+            <require_approval type="BooleanField">
+                <default>1</default>
+                <Required>Y</Required>
+                <help>Require human approval for all suggestions</help>
+            </require_approval>
+        </security>
+    </items>
+</model>
