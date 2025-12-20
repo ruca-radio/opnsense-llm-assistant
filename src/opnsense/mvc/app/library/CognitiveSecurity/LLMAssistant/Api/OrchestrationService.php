@@ -210,38 +210,48 @@ class OrchestrationService
     {
         $dir = dirname($this->learningDb);
         if (!is_dir($dir)) {
-            mkdir($dir, 0700, true);
+            @mkdir($dir, 0700, true);
         }
         
         if (!file_exists($this->learningDb)) {
-            $db = new \SQLite3($this->learningDb);
-            $db->exec('
-                CREATE TABLE IF NOT EXISTS interactions (
-                    id INTEGER PRIMARY KEY,
-                    timestamp INTEGER,
-                    query TEXT,
-                    response TEXT,
-                    model TEXT,
-                    feedback TEXT,
-                    applied BOOLEAN DEFAULT 0
-                );
-                
-                CREATE TABLE IF NOT EXISTS preferences (
-                    key TEXT PRIMARY KEY,
-                    value TEXT,
-                    confidence REAL DEFAULT 0.5,
-                    updated INTEGER
-                );
-                
-                CREATE TABLE IF NOT EXISTS patterns (
-                    id INTEGER PRIMARY KEY,
-                    pattern TEXT,
-                    action TEXT,
-                    frequency INTEGER DEFAULT 1,
-                    last_seen INTEGER
-                );
-            ');
-            $db->close();
+            try {
+                $db = new \SQLite3($this->learningDb);
+                $db->exec('
+                    CREATE TABLE IF NOT EXISTS interactions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp INTEGER,
+                        query TEXT,
+                        response TEXT,
+                        model TEXT,
+                        feedback TEXT,
+                        applied BOOLEAN DEFAULT 0
+                    );
+                    
+                    CREATE TABLE IF NOT EXISTS preferences (
+                        key TEXT PRIMARY KEY,
+                        value TEXT,
+                        confidence REAL DEFAULT 0.5,
+                        updated INTEGER
+                    );
+                    
+                    CREATE TABLE IF NOT EXISTS patterns (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        pattern TEXT UNIQUE,
+                        action TEXT,
+                        frequency INTEGER DEFAULT 1,
+                        last_seen INTEGER
+                    );
+                    
+                    CREATE INDEX IF NOT EXISTS idx_interactions_timestamp 
+                    ON interactions(timestamp);
+                    
+                    CREATE INDEX IF NOT EXISTS idx_patterns_action 
+                    ON patterns(action);
+                ');
+                $db->close();
+            } catch (\Exception $e) {
+                error_log("Failed to initialize learning database: " . $e->getMessage());
+            }
         }
     }
     
@@ -250,22 +260,26 @@ class OrchestrationService
      */
     private function recordInteraction($query, $response, $model)
     {
-        $db = new \SQLite3($this->learningDb);
-        $stmt = $db->prepare('
-            INSERT INTO interactions (timestamp, query, response, model)
-            VALUES (:timestamp, :query, :response, :model)
-        ');
-        
-        $stmt->bindValue(':timestamp', time());
-        $stmt->bindValue(':query', $query);
-        $stmt->bindValue(':response', json_encode($response));
-        $stmt->bindValue(':model', $model);
-        $stmt->execute();
-        
-        $db->close();
-        
-        // Update patterns
-        $this->updatePatterns($query);
+        try {
+            $db = new \SQLite3($this->learningDb);
+            $stmt = $db->prepare('
+                INSERT INTO interactions (timestamp, query, response, model)
+                VALUES (:timestamp, :query, :response, :model)
+            ');
+            
+            $stmt->bindValue(':timestamp', time(), SQLITE3_INTEGER);
+            $stmt->bindValue(':query', $query, SQLITE3_TEXT);
+            $stmt->bindValue(':response', json_encode($response), SQLITE3_TEXT);
+            $stmt->bindValue(':model', $model, SQLITE3_TEXT);
+            $stmt->execute();
+            
+            $db->close();
+            
+            // Update patterns
+            $this->updatePatterns($query);
+        } catch (\Exception $e) {
+            error_log("Failed to record interaction: " . $e->getMessage());
+        }
     }
     
     /**
@@ -281,26 +295,30 @@ class OrchestrationService
             'security_audit' => '/security.*audit|audit.*security|compliance/i'
         ];
         
-        $db = new \SQLite3($this->learningDb);
-        
-        foreach ($patterns as $action => $pattern) {
-            if (preg_match($pattern, $query)) {
-                $stmt = $db->prepare('
-                    INSERT INTO patterns (pattern, action, last_seen)
-                    VALUES (:pattern, :action, :time)
-                    ON CONFLICT(pattern) DO UPDATE SET
-                        frequency = frequency + 1,
-                        last_seen = :time
-                ');
-                
-                $stmt->bindValue(':pattern', $pattern);
-                $stmt->bindValue(':action', $action);
-                $stmt->bindValue(':time', time());
-                $stmt->execute();
+        try {
+            $db = new \SQLite3($this->learningDb);
+            
+            foreach ($patterns as $action => $pattern) {
+                if (preg_match($pattern, $query)) {
+                    $stmt = $db->prepare('
+                        INSERT INTO patterns (pattern, action, last_seen)
+                        VALUES (:pattern, :action, :time)
+                        ON CONFLICT(pattern) DO UPDATE SET
+                            frequency = frequency + 1,
+                            last_seen = :time
+                    ');
+                    
+                    $stmt->bindValue(':pattern', $pattern, SQLITE3_TEXT);
+                    $stmt->bindValue(':action', $action, SQLITE3_TEXT);
+                    $stmt->bindValue(':time', time(), SQLITE3_INTEGER);
+                    $stmt->execute();
+                }
             }
+            
+            $db->close();
+        } catch (\Exception $e) {
+            error_log("Failed to update patterns: " . $e->getMessage());
         }
-        
-        $db->close();
     }
     
     /**
@@ -308,24 +326,29 @@ class OrchestrationService
      */
     private function getRecentInteractions($limit = 5)
     {
-        $db = new \SQLite3($this->learningDb);
-        $stmt = $db->prepare('
-            SELECT query, response, model 
-            FROM interactions 
-            ORDER BY timestamp DESC 
-            LIMIT :limit
-        ');
-        $stmt->bindValue(':limit', $limit);
-        
-        $result = $stmt->execute();
-        $interactions = [];
-        
-        while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
-            $interactions[] = $row;
+        try {
+            $db = new \SQLite3($this->learningDb);
+            $stmt = $db->prepare('
+                SELECT query, response, model 
+                FROM interactions 
+                ORDER BY timestamp DESC 
+                LIMIT :limit
+            ');
+            $stmt->bindValue(':limit', $limit, SQLITE3_INTEGER);
+            
+            $result = $stmt->execute();
+            $interactions = [];
+            
+            while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+                $interactions[] = $row;
+            }
+            
+            $db->close();
+            return $interactions;
+        } catch (\Exception $e) {
+            error_log("Failed to get recent interactions: " . $e->getMessage());
+            return [];
         }
-        
-        $db->close();
-        return $interactions;
     }
     
     /**
@@ -333,21 +356,26 @@ class OrchestrationService
      */
     private function getLearnedPreferences()
     {
-        $db = new \SQLite3($this->learningDb);
-        $result = $db->query('
-            SELECT key, value 
-            FROM preferences 
-            WHERE confidence > 0.7
-            ORDER BY confidence DESC
-        ');
-        
-        $preferences = [];
-        while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
-            $preferences[$row['key']] = $row['value'];
+        try {
+            $db = new \SQLite3($this->learningDb);
+            $result = $db->query('
+                SELECT key, value 
+                FROM preferences 
+                WHERE confidence > 0.7
+                ORDER BY confidence DESC
+            ');
+            
+            $preferences = [];
+            while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+                $preferences[$row['key']] = $row['value'];
+            }
+            
+            $db->close();
+            return $preferences;
+        } catch (\Exception $e) {
+            error_log("Failed to get learned preferences: " . $e->getMessage());
+            return [];
         }
-        
-        $db->close();
-        return $preferences;
     }
     
     /**
@@ -355,24 +383,28 @@ class OrchestrationService
      */
     public function provideFeedback($interactionId, $feedback, $applied = false)
     {
-        $db = new \SQLite3($this->learningDb);
-        $stmt = $db->prepare('
-            UPDATE interactions 
-            SET feedback = :feedback, applied = :applied
-            WHERE id = :id
-        ');
-        
-        $stmt->bindValue(':feedback', $feedback);
-        $stmt->bindValue(':applied', $applied ? 1 : 0);
-        $stmt->bindValue(':id', $interactionId);
-        $stmt->execute();
-        
-        // If positive feedback and applied, increase confidence in patterns
-        if ($feedback === 'helpful' && $applied) {
-            $this->reinforcePatterns($interactionId);
+        try {
+            $db = new \SQLite3($this->learningDb);
+            $stmt = $db->prepare('
+                UPDATE interactions 
+                SET feedback = :feedback, applied = :applied
+                WHERE id = :id
+            ');
+            
+            $stmt->bindValue(':feedback', $feedback, SQLITE3_TEXT);
+            $stmt->bindValue(':applied', $applied ? 1 : 0, SQLITE3_INTEGER);
+            $stmt->bindValue(':id', $interactionId, SQLITE3_INTEGER);
+            $stmt->execute();
+            
+            // If positive feedback and applied, increase confidence in patterns
+            if ($feedback === 'helpful' && $applied) {
+                $this->reinforcePatterns($interactionId);
+            }
+            
+            $db->close();
+        } catch (\Exception $e) {
+            error_log("Failed to provide feedback: " . $e->getMessage());
         }
-        
-        $db->close();
     }
     
     /**
@@ -380,20 +412,24 @@ class OrchestrationService
      */
     private function reinforcePatterns($interactionId)
     {
-        $db = new \SQLite3($this->learningDb);
-        
-        // Get the interaction
-        $stmt = $db->prepare('SELECT query FROM interactions WHERE id = :id');
-        $stmt->bindValue(':id', $interactionId);
-        $result = $stmt->execute();
-        $interaction = $result->fetchArray(SQLITE3_ASSOC);
-        
-        if ($interaction) {
-            // Update confidence for matching patterns
-            $this->updatePatterns($interaction['query']);
+        try {
+            $db = new \SQLite3($this->learningDb);
+            
+            // Get the interaction
+            $stmt = $db->prepare('SELECT query FROM interactions WHERE id = :id');
+            $stmt->bindValue(':id', $interactionId, SQLITE3_INTEGER);
+            $result = $stmt->execute();
+            $interaction = $result->fetchArray(SQLITE3_ASSOC);
+            
+            if ($interaction) {
+                // Update confidence for matching patterns
+                $this->updatePatterns($interaction['query']);
+            }
+            
+            $db->close();
+        } catch (\Exception $e) {
+            error_log("Failed to reinforce patterns: " . $e->getMessage());
         }
-        
-        $db->close();
     }
     
     /**

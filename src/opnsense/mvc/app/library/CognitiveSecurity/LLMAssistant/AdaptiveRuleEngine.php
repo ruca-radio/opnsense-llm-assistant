@@ -18,6 +18,45 @@ class AdaptiveRuleEngine
     {
         $this->orchestrator = new Api\OrchestrationService();
         $this->initializeSandbox();
+        $this->initializeDatabase();
+    }
+    
+    /**
+     * Initialize database tables for rule decisions
+     */
+    private function initializeDatabase()
+    {
+        $dir = dirname($this->learningDb);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0700, true);
+        }
+        
+        if (!file_exists($this->learningDb)) {
+            try {
+                $db = new \SQLite3($this->learningDb);
+                $db->exec('
+                    CREATE TABLE IF NOT EXISTS rule_decisions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        suggestion_id TEXT,
+                        suggestion_type TEXT,
+                        decision TEXT,
+                        result TEXT,
+                        timestamp INTEGER,
+                        context TEXT
+                    );
+                    
+                    CREATE INDEX IF NOT EXISTS idx_suggestion_type 
+                    ON rule_decisions(suggestion_type);
+                    
+                    CREATE INDEX IF NOT EXISTS idx_timestamp 
+                    ON rule_decisions(timestamp);
+                ');
+                $db->close();
+            } catch (\Exception $e) {
+                // Silently fail if database cannot be created
+                error_log("Failed to initialize AdaptiveRuleEngine database: " . $e->getMessage());
+            }
+        }
     }
     
     /**
@@ -113,37 +152,41 @@ class AdaptiveRuleEngine
      */
     public function learnFromDecision($suggestionId, $decision, $result = null)
     {
-        $db = new \SQLite3($this->learningDb);
-        
-        // Record decision
-        $stmt = $db->prepare('
-            INSERT INTO rule_decisions (
-                suggestion_id, suggestion_type, decision, 
-                result, timestamp, context
-            ) VALUES (
-                :id, :type, :decision, 
-                :result, :time, :context
-            )
-        ');
-        
-        $stmt->bindValue(':id', $suggestionId);
-        $stmt->bindValue(':type', $this->getSuggestionType($suggestionId));
-        $stmt->bindValue(':decision', $decision); // accepted, rejected, modified
-        $stmt->bindValue(':result', $result); // effective, ineffective, null
-        $stmt->bindValue(':time', time());
-        $stmt->bindValue(':context', json_encode($this->getCurrentContext()));
-        
-        $stmt->execute();
-        
-        // Update confidence scores
-        $this->updateConfidenceScores($suggestionId, $decision, $result);
-        
-        // If rejected, learn why
-        if ($decision === 'rejected') {
-            $this->analyzeRejection($suggestionId);
+        try {
+            $db = new \SQLite3($this->learningDb);
+            
+            // Record decision
+            $stmt = $db->prepare('
+                INSERT INTO rule_decisions (
+                    suggestion_id, suggestion_type, decision, 
+                    result, timestamp, context
+                ) VALUES (
+                    :id, :type, :decision, 
+                    :result, :time, :context
+                )
+            ');
+            
+            $stmt->bindValue(':id', $suggestionId, SQLITE3_TEXT);
+            $stmt->bindValue(':type', $this->getSuggestionType($suggestionId), SQLITE3_TEXT);
+            $stmt->bindValue(':decision', $decision, SQLITE3_TEXT);
+            $stmt->bindValue(':result', $result, SQLITE3_TEXT);
+            $stmt->bindValue(':time', time(), SQLITE3_INTEGER);
+            $stmt->bindValue(':context', json_encode($this->getCurrentContext()), SQLITE3_TEXT);
+            
+            $stmt->execute();
+            
+            // Update confidence scores
+            $this->updateConfidenceScores($suggestionId, $decision, $result);
+            
+            // If rejected, learn why
+            if ($decision === 'rejected') {
+                $this->analyzeRejection($suggestionId);
+            }
+            
+            $db->close();
+        } catch (\Exception $e) {
+            error_log("Failed to record rule decision: " . $e->getMessage());
         }
-        
-        $db->close();
     }
     
     /**
@@ -181,10 +224,19 @@ class AdaptiveRuleEngine
         $offenders = [];
         
         // Parse recent firewall logs
-        $logs = shell_exec('clog /var/log/filter/latest.log | grep "block" | tail -n 1000');
+        $logs = @shell_exec('clog /var/log/filter/latest.log 2>/dev/null | grep "block" | tail -n 1000');
+        
+        if (empty($logs)) {
+            return ['repeated_offenders' => []];
+        }
+        
         $lines = explode("\n", $logs);
         
         foreach ($lines as $line) {
+            if (empty($line)) {
+                continue;
+            }
+            
             if (preg_match('/block.*?(\d+\.\d+\.\d+\.\d+).*?(\d+\.\d+\.\d+\.\d+)/', $line, $matches)) {
                 $srcIp = $matches[1];
                 $offenders[$srcIp] = ($offenders[$srcIp] ?? 0) + 1;
@@ -294,30 +346,36 @@ class AdaptiveRuleEngine
     {
         $confidence = 0.5; // Base confidence
         
-        // Adjust based on historical decisions
-        $db = new \SQLite3($this->learningDb);
-        $stmt = $db->prepare('
-            SELECT decision, COUNT(*) as count 
-            FROM rule_decisions 
-            WHERE suggestion_type = :type 
-            GROUP BY decision
-        ');
-        $stmt->bindValue(':type', $data['type'] ?? 'unknown');
-        $result = $stmt->execute();
-        
-        $accepted = 0;
-        $rejected = 0;
-        
-        while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
-            if ($row['decision'] === 'accepted') {
-                $accepted = $row['count'];
-            } elseif ($row['decision'] === 'rejected') {
-                $rejected = $row['count'];
+        try {
+            // Adjust based on historical decisions
+            $db = new \SQLite3($this->learningDb);
+            $stmt = $db->prepare('
+                SELECT decision, COUNT(*) as count 
+                FROM rule_decisions 
+                WHERE suggestion_type = :type 
+                GROUP BY decision
+            ');
+            $stmt->bindValue(':type', $data['type'] ?? 'unknown', SQLITE3_TEXT);
+            $result = $stmt->execute();
+            
+            $accepted = 0;
+            $rejected = 0;
+            
+            while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+                if ($row['decision'] === 'accepted') {
+                    $accepted = $row['count'];
+                } elseif ($row['decision'] === 'rejected') {
+                    $rejected = $row['count'];
+                }
             }
-        }
-        
-        if ($accepted + $rejected > 0) {
-            $confidence = $accepted / ($accepted + $rejected);
+            
+            if ($accepted + $rejected > 0) {
+                $confidence = $accepted / ($accepted + $rejected);
+            }
+            
+            $db->close();
+        } catch (\Exception $e) {
+            error_log("Failed to calculate confidence: " . $e->getMessage());
         }
         
         // Adjust based on threat level
@@ -329,8 +387,6 @@ class AdaptiveRuleEngine
         if (isset($data['count'])) {
             $confidence += min($data['count'] / 100, 0.2);
         }
-        
-        $db->close();
         
         return max(0, min(1, $confidence)); // Clamp between 0 and 1
     }
@@ -464,5 +520,296 @@ class AdaptiveRuleEngine
         $port = isset($rule->destination->port) ? (string)$rule->destination->port : 'any';
         
         return md5($src . '|' . $dst . '|' . $port);
+    }
+    
+    /**
+     * Validate rule XML syntax
+     */
+    private function validateRuleSyntax($ruleXml)
+    {
+        // Check if XML is well-formed
+        $prevErrors = libxml_use_internal_errors(true);
+        $xml = simplexml_load_string($ruleXml);
+        $errors = libxml_get_errors();
+        libxml_clear_errors();
+        libxml_use_internal_errors($prevErrors);
+        
+        return empty($errors) && $xml !== false;
+    }
+    
+    /**
+     * Check for rule conflicts
+     */
+    private function checkRuleConflicts($ruleXml)
+    {
+        $conflicts = [];
+        
+        try {
+            $newRule = simplexml_load_string($ruleXml);
+            if (!$newRule) {
+                return ['error' => 'Invalid XML'];
+            }
+            
+            $config = Config::getInstance()->object();
+            if (!isset($config->filter->rule)) {
+                return [];
+            }
+            
+            // Check for overlapping rules
+            foreach ($config->filter->rule as $existingRule) {
+                if ($this->rulesOverlap($newRule, $existingRule)) {
+                    $conflicts[] = [
+                        'rule' => (string)$existingRule->descr,
+                        'reason' => 'Overlapping source/destination'
+                    ];
+                }
+            }
+        } catch (\Exception $e) {
+            return ['error' => $e->getMessage()];
+        }
+        
+        return $conflicts;
+    }
+    
+    /**
+     * Check if two rules overlap
+     */
+    private function rulesOverlap($rule1, $rule2)
+    {
+        // Simplified overlap detection
+        // In production, implement full overlap logic
+        $src1 = isset($rule1->source->address) ? (string)$rule1->source->address : 'any';
+        $src2 = isset($rule2->source->address) ? (string)$rule2->source->address : 'any';
+        $dst1 = isset($rule1->destination->address) ? (string)$rule1->destination->address : 'any';
+        $dst2 = isset($rule2->destination->address) ? (string)$rule2->destination->address : 'any';
+        
+        return ($src1 === $src2 || $src1 === 'any' || $src2 === 'any') &&
+               ($dst1 === $dst2 || $dst1 === 'any' || $dst2 === 'any');
+    }
+    
+    /**
+     * Estimate performance impact of rule
+     */
+    private function estimatePerformanceImpact($ruleXml)
+    {
+        try {
+            $rule = simplexml_load_string($ruleXml);
+            if (!$rule) {
+                return 'unknown';
+            }
+            
+            // Complex rules have higher impact
+            $complexity = 0;
+            
+            if (isset($rule->source->address) && (string)$rule->source->address !== 'any') {
+                $complexity++;
+            }
+            if (isset($rule->destination->address) && (string)$rule->destination->address !== 'any') {
+                $complexity++;
+            }
+            if (isset($rule->destination->port)) {
+                $complexity++;
+            }
+            if (isset($rule->protocol) && (string)$rule->protocol !== 'any') {
+                $complexity++;
+            }
+            
+            if ($complexity === 0) {
+                return 'high'; // any/any rules checked for every packet
+            } elseif ($complexity <= 2) {
+                return 'medium';
+            } else {
+                return 'low'; // Specific rules are faster
+            }
+        } catch (\Exception $e) {
+            return 'unknown';
+        }
+    }
+    
+    /**
+     * Calculate security score for rule
+     */
+    private function calculateSecurityScore($ruleXml)
+    {
+        try {
+            $rule = simplexml_load_string($ruleXml);
+            if (!$rule) {
+                return 0;
+            }
+            
+            $score = 50; // Base score
+            
+            // Specific source is better
+            if (isset($rule->source->address) && (string)$rule->source->address !== 'any') {
+                $score += 15;
+            }
+            
+            // Specific destination is better
+            if (isset($rule->destination->address) && (string)$rule->destination->address !== 'any') {
+                $score += 15;
+            }
+            
+            // Specific port is better
+            if (isset($rule->destination->port)) {
+                $score += 10;
+            }
+            
+            // Specific protocol is better
+            if (isset($rule->protocol) && (string)$rule->protocol !== 'any') {
+                $score += 10;
+            }
+            
+            // Block rules are more secure than pass
+            if (isset($rule->type) && (string)$rule->type === 'block') {
+                $score += 10;
+            } else {
+                $score -= 10;
+            }
+            
+            return max(0, min(100, $score));
+        } catch (\Exception $e) {
+            return 0;
+        }
+    }
+    
+    /**
+     * Get recent destination ports from logs
+     */
+    private function getRecentDestinationPorts()
+    {
+        $ports = [];
+        
+        // Parse recent logs
+        $cmd = 'clog /var/log/filter/latest.log 2>/dev/null | tail -n 500 | grep -oE "port [0-9]+" | sed "s/port //"';
+        $output = @shell_exec($cmd);
+        
+        if ($output) {
+            $lines = explode("\n", trim($output));
+            foreach ($lines as $port) {
+                if (is_numeric($port)) {
+                    $ports[$port] = ($ports[$port] ?? 0) + 1;
+                }
+            }
+        }
+        
+        return $ports;
+    }
+    
+    /**
+     * Get historical port usage
+     */
+    private function getHistoricalPorts()
+    {
+        // In production, this would query a database of historical traffic
+        // For now, return commonly used ports
+        return [
+            '80' => 1000,
+            '443' => 1000,
+            '22' => 500,
+            '53' => 500,
+            '25' => 200
+        ];
+    }
+    
+    /**
+     * Get suggestion type by ID
+     */
+    private function getSuggestionType($suggestionId)
+    {
+        // In production, look this up from a suggestions table
+        // For now, return generic type
+        return 'adaptive_suggestion';
+    }
+    
+    /**
+     * Get current system context
+     */
+    private function getCurrentContext()
+    {
+        return [
+            'timestamp' => time(),
+            'rules_count' => $this->countCurrentRules(),
+            'active_interfaces' => $this->countActiveInterfaces()
+        ];
+    }
+    
+    /**
+     * Count current firewall rules
+     */
+    private function countCurrentRules()
+    {
+        $config = Config::getInstance()->object();
+        return isset($config->filter->rule) ? count($config->filter->rule) : 0;
+    }
+    
+    /**
+     * Count active interfaces
+     */
+    private function countActiveInterfaces()
+    {
+        $config = Config::getInstance()->object();
+        $count = 0;
+        
+        if (isset($config->interfaces)) {
+            foreach ($config->interfaces->children() as $interface) {
+                if ((string)$interface->enable === '1') {
+                    $count++;
+                }
+            }
+        }
+        
+        return $count;
+    }
+    
+    /**
+     * Assess threat level for an IP
+     */
+    private function assessThreatLevel($ip, $count)
+    {
+        // Simple threat scoring
+        $level = 1;
+        
+        if ($count > 100) {
+            $level = 10;
+        } elseif ($count > 50) {
+            $level = 8;
+        } elseif ($count > 20) {
+            $level = 6;
+        } elseif ($count > 10) {
+            $level = 4;
+        }
+        
+        return $level;
+    }
+    
+    /**
+     * Consolidate multiple rules into one
+     */
+    private function consolidateRules($rules)
+    {
+        // Simplified consolidation - in production, implement proper logic
+        return [
+            'type' => 'consolidated',
+            'description' => 'Consolidated ' . count($rules) . ' rules',
+            'rules' => $rules
+        ];
+    }
+    
+    /**
+     * Update confidence scores based on decision outcomes
+     */
+    private function updateConfidenceScores($suggestionId, $decision, $result)
+    {
+        // In production, implement proper confidence score adjustment
+        // based on Bayesian updating or similar algorithms
+    }
+    
+    /**
+     * Analyze why a suggestion was rejected
+     */
+    private function analyzeRejection($suggestionId)
+    {
+        // In production, implement pattern analysis to learn
+        // from rejected suggestions
     }
 }
