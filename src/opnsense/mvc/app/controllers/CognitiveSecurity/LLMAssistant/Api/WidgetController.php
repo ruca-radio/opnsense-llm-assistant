@@ -184,17 +184,31 @@ class WidgetController extends ApiControllerBase
             return ['status' => 'error', 'message' => 'Invalid request method'];
         }
         
-        $interactionId = $this->request->getPost('interaction_id', 'int');
-        $feedback = $this->request->getPost('feedback', 'string');
+        $interactionId = $this->request->getPost('interaction_id', 'int', 0);
+        $feedback = $this->request->getPost('feedback', 'string', '');
         $applied = $this->request->getPost('applied', 'int', 0);
+        
+        // Validate inputs
+        if ($interactionId <= 0) {
+            return ['status' => 'error', 'message' => 'Invalid interaction ID'];
+        }
+        
+        $validFeedback = ['helpful', 'not_helpful'];
+        if (!in_array($feedback, $validFeedback)) {
+            return ['status' => 'error', 'message' => 'Invalid feedback value'];
+        }
         
         try {
             $orchestrator = new OrchestrationService();
             $orchestrator->provideFeedback($interactionId, $feedback, $applied);
             
-            return ['status' => 'success'];
+            return [
+                'status' => 'success',
+                'message' => 'Thank you for your feedback!'
+            ];
             
         } catch (\Exception $e) {
+            error_log("Failed to record feedback: " . $e->getMessage());
             return ['status' => 'error', 'message' => 'Failed to record feedback'];
         }
     }

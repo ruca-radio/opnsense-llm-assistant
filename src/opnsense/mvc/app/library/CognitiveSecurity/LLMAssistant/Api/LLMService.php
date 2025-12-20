@@ -243,11 +243,24 @@ class LLMService
 class RateLimiter
 {
     private $storageFile = '/tmp/llm_rate_limit.json';
+    private $lockFile = '/tmp/llm_rate_limit.lock';
     
     public function checkLimit($maxPerMinute)
     {
         $now = time();
         $minute = floor($now / 60);
+        
+        // Use file locking to prevent race conditions
+        $lockFp = fopen($this->lockFile, 'c');
+        if (!$lockFp) {
+            // If we can't get a lock, fail open (allow request)
+            return true;
+        }
+        
+        if (!flock($lockFp, LOCK_EX)) {
+            fclose($lockFp);
+            return true;
+        }
         
         $data = $this->loadData();
         
@@ -261,12 +274,17 @@ class RateLimiter
         // Check current minute
         $currentCount = $data[$minute] ?? 0;
         if ($currentCount >= $maxPerMinute) {
+            flock($lockFp, LOCK_UN);
+            fclose($lockFp);
             return false;
         }
         
         // Increment and save
         $data[$minute] = $currentCount + 1;
         $this->saveData($data);
+        
+        flock($lockFp, LOCK_UN);
+        fclose($lockFp);
         
         return true;
     }
@@ -276,12 +294,19 @@ class RateLimiter
         if (!file_exists($this->storageFile)) {
             return [];
         }
-        return json_decode(file_get_contents($this->storageFile), true) ?: [];
+        
+        $content = @file_get_contents($this->storageFile);
+        if ($content === false) {
+            return [];
+        }
+        
+        $data = @json_decode($content, true);
+        return is_array($data) ? $data : [];
     }
     
     private function saveData($data)
     {
-        file_put_contents($this->storageFile, json_encode($data));
+        @file_put_contents($this->storageFile, json_encode($data), LOCK_EX);
     }
 }
 
