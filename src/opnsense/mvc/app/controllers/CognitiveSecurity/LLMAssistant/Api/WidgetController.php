@@ -21,14 +21,25 @@ class WidgetController extends ApiControllerBase
     {
         $model = new LLMAssistant();
         
-        return [
+        $status = [
             'configured' => $model->isConfigured(),
+            'enabled' => (string)$model->general->enabled === '1',
+            'provider' => (string)$model->general->api_provider,
+            'model' => (string)$model->general->model_name,
             'features' => [
                 'natural_language' => true,
                 'continuous_learning' => true,
-                'multi_model' => true
-            ]
+                'multi_model' => true,
+                'config_review' => $model->isFeatureEnabled('config_review'),
+                'incident_reports' => $model->isFeatureEnabled('incident_reports'),
+                'rule_assistant' => $model->isFeatureEnabled('rule_assistant'),
+                'learning_mode' => $model->isFeatureEnabled('learning_mode')
+            ],
+            'rate_limit' => $model->getRateLimit(),
+            'version' => '1.0.0'
         ];
+        
+        return $status;
     }
     
     /**

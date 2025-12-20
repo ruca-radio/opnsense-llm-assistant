@@ -72,20 +72,35 @@ class IncidentReportController extends ApiControllerBase
         $reportDir = '/var/llm_assistant/reports/';
         
         if (is_dir($reportDir)) {
-            $files = glob($reportDir . '*.json');
+            $files = @glob($reportDir . '*.json');
+            
+            if ($files === false) {
+                return [
+                    'status' => 'error',
+                    'message' => 'Failed to read reports directory'
+                ];
+            }
+            
             foreach ($files as $file) {
-                $data = json_decode(file_get_contents($file), true);
-                if ($data) {
+                $content = @file_get_contents($file);
+                if ($content === false) {
+                    continue;
+                }
+                
+                $data = @json_decode($content, true);
+                if ($data && is_array($data)) {
                     $reports[] = [
                         'id' => basename($file, '.json'),
                         'created' => $data['created'] ?? filemtime($file),
-                        'summary' => $data['summary'] ?? 'No summary available'
+                        'summary' => isset($data['summary']) ? 
+                                    substr($data['summary'], 0, 200) : 
+                                    'No summary available'
                     ];
                 }
             }
         }
         
-        // Sort by creation date
+        // Sort by creation date (newest first)
         usort($reports, function($a, $b) {
             return $b['created'] - $a['created'];
         });
@@ -173,6 +188,32 @@ class IncidentReportController extends ApiControllerBase
             throw new \Exception('Failed to save report to disk');
         }
         
+        // Clean up old reports (keep last 100)
+        $this->cleanupOldReports($reportDir, 100);
+        
         return $reportId;
+    }
+    
+    /**
+     * Clean up old report files
+     */
+    private function cleanupOldReports($reportDir, $keepCount = 100)
+    {
+        $files = @glob($reportDir . '*.json');
+        
+        if ($files === false || count($files) <= $keepCount) {
+            return;
+        }
+        
+        // Sort by modification time (oldest first)
+        usort($files, function($a, $b) {
+            return filemtime($a) - filemtime($b);
+        });
+        
+        // Delete oldest files
+        $deleteCount = count($files) - $keepCount;
+        for ($i = 0; $i < $deleteCount; $i++) {
+            @unlink($files[$i]);
+        }
     }
 }
