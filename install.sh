@@ -140,7 +140,7 @@ install_files() {
     # Copy controllers
     echo_info "Installing controllers..."
     if [ -d "${SRC_PATH}/controllers/${PLUGIN_VENDOR}/LLMAssistant" ]; then
-        cp -r "${SRC_PATH}/controllers/${PLUGIN_VENDOR}/LLMAssistant/"* \
+        cp -r "${SRC_PATH}/controllers/${PLUGIN_VENDOR}/LLMAssistant/." \
             "${MVC_PATH}/controllers/${PLUGIN_VENDOR}/LLMAssistant/" || {
             echo_error "Failed to copy controllers"
             exit 1
@@ -150,7 +150,7 @@ install_files() {
     # Copy models
     echo_info "Installing models..."
     if [ -d "${SRC_PATH}/models/${PLUGIN_VENDOR}/LLMAssistant" ]; then
-        cp -r "${SRC_PATH}/models/${PLUGIN_VENDOR}/LLMAssistant/"* \
+        cp -r "${SRC_PATH}/models/${PLUGIN_VENDOR}/LLMAssistant/." \
             "${MVC_PATH}/models/${PLUGIN_VENDOR}/LLMAssistant/" || {
             echo_error "Failed to copy models"
             exit 1
@@ -160,7 +160,7 @@ install_files() {
     # Copy libraries
     echo_info "Installing libraries..."
     if [ -d "${SRC_PATH}/library/${PLUGIN_VENDOR}/LLMAssistant" ]; then
-        cp -r "${SRC_PATH}/library/${PLUGIN_VENDOR}/LLMAssistant/"* \
+        cp -r "${SRC_PATH}/library/${PLUGIN_VENDOR}/LLMAssistant/." \
             "${MVC_PATH}/library/${PLUGIN_VENDOR}/LLMAssistant/" || {
             echo_error "Failed to copy libraries"
             exit 1
@@ -170,7 +170,7 @@ install_files() {
     # Copy views
     echo_info "Installing views..."
     if [ -d "${SRC_PATH}/views/${PLUGIN_VENDOR}/LLMAssistant" ]; then
-        cp -r "${SRC_PATH}/views/${PLUGIN_VENDOR}/LLMAssistant/"* \
+        cp -r "${SRC_PATH}/views/${PLUGIN_VENDOR}/LLMAssistant/." \
             "${MVC_PATH}/views/${PLUGIN_VENDOR}/LLMAssistant/" || {
             echo_error "Failed to copy views"
             exit 1

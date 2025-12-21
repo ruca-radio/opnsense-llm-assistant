@@ -66,18 +66,28 @@ backup_config() {
     mkdir -p "${BACKUP_DIR}"
     
     # Backup plugin directories if they exist
-    [ -d "${MVC_PATH}/controllers/${PLUGIN_VENDOR}" ] && \
+    if [ -d "${MVC_PATH}/controllers/${PLUGIN_VENDOR}" ]; then
+        mkdir -p "${BACKUP_DIR}/controllers"
         cp -r "${MVC_PATH}/controllers/${PLUGIN_VENDOR}" "${BACKUP_DIR}/controllers/" 2>/dev/null || true
-    [ -d "${MVC_PATH}/models/${PLUGIN_VENDOR}" ] && \
+    fi
+    if [ -d "${MVC_PATH}/models/${PLUGIN_VENDOR}" ]; then
+        mkdir -p "${BACKUP_DIR}/models"
         cp -r "${MVC_PATH}/models/${PLUGIN_VENDOR}" "${BACKUP_DIR}/models/" 2>/dev/null || true
-    [ -d "${MVC_PATH}/library/${PLUGIN_VENDOR}" ] && \
+    fi
+    if [ -d "${MVC_PATH}/library/${PLUGIN_VENDOR}" ]; then
+        mkdir -p "${BACKUP_DIR}/library"
         cp -r "${MVC_PATH}/library/${PLUGIN_VENDOR}" "${BACKUP_DIR}/library/" 2>/dev/null || true
-    [ -d "${MVC_PATH}/views/${PLUGIN_VENDOR}" ] && \
+    fi
+    if [ -d "${MVC_PATH}/views/${PLUGIN_VENDOR}" ]; then
+        mkdir -p "${BACKUP_DIR}/views"
         cp -r "${MVC_PATH}/views/${PLUGIN_VENDOR}" "${BACKUP_DIR}/views/" 2>/dev/null || true
+    fi
     
     # Backup logs
-    [ -d "/var/log/llm-assistant" ] && \
+    if [ -d "/var/log/llm-assistant" ]; then
+        mkdir -p "${BACKUP_DIR}/logs"
         cp -r /var/log/llm-assistant "${BACKUP_DIR}/logs/" 2>/dev/null || true
+    fi
     
     # Backup OPNsense configuration if possible
     if [ -f "/conf/config.xml" ]; then
