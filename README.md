@@ -36,14 +36,80 @@ A pragmatic AI-powered security assistant for OPNsense that augments human secur
 
 ## Installation
 
-1. Download the plugin package
-2. Install via OPNsense package manager:
+### Automated Installation (Recommended)
+
+The plugin is currently in active development and not yet available via the OPNsense package manager. Use the provided installation script:
+
+1. Download or clone this repository:
+   ```bash
+   git clone https://github.com/ruca-radio/opnsense-llm-assistant.git
+   cd opnsense-llm-assistant
    ```
-   pkg install os-llm-assistant
+
+2. Run the installation script as root:
+   ```bash
+   sudo sh install.sh
    ```
-3. Navigate to Interfaces → LLM Assistant
-4. Configure your API provider and key
-5. Enable desired features
+
+3. The script will:
+   - Check system compatibility (FreeBSD/OPNsense)
+   - Install required dependencies (PHP extensions)
+   - Copy plugin files to the correct locations
+   - Set appropriate permissions
+   - Register the plugin with OPNsense
+   - Restart the web interface
+
+4. After installation:
+   - Navigate to **Interfaces → LLM Assistant** in the OPNsense web interface
+   - Configure your API provider and key
+   - Enable desired features
+
+### Manual Installation
+
+If you prefer manual installation or the script fails:
+
+1. Ensure PHP and required extensions are installed:
+   ```bash
+   pkg install php81 php81-curl php81-json php81-openssl
+   ```
+
+2. Copy plugin files to OPNsense directories:
+   ```bash
+   cp -r src/opnsense/mvc/app/* /usr/local/opnsense/mvc/app/
+   ```
+
+3. Set permissions:
+   ```bash
+   chown -R root:wheel /usr/local/opnsense/mvc/app/controllers/CognitiveSecurity
+   chown -R root:wheel /usr/local/opnsense/mvc/app/models/CognitiveSecurity
+   chown -R root:wheel /usr/local/opnsense/mvc/app/library/CognitiveSecurity
+   chown -R root:wheel /usr/local/opnsense/mvc/app/views/CognitiveSecurity
+   ```
+
+4. Create runtime directories:
+   ```bash
+   mkdir -p /var/log/llm-assistant /var/cache/llm-assistant
+   chmod 755 /var/log/llm-assistant /var/cache/llm-assistant
+   ```
+
+5. Restart the web interface:
+   ```bash
+   configctl webgui restart
+   ```
+
+### Uninstallation
+
+To remove the plugin:
+
+```bash
+sudo sh uninstall.sh
+```
+
+The uninstall script will:
+- Backup your configuration and logs
+- Remove all plugin files
+- Clean up runtime directories
+- Unregister the plugin from OPNsense
 
 ## Configuration
 
