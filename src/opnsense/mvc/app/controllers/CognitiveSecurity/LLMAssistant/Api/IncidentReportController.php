@@ -26,6 +26,15 @@ class IncidentReportController extends ApiControllerBase
             
             // Get time range (default: last 24 hours)
             $hours = $this->request->getPost('hours', 'int', 24);
+            
+            // Validate hours parameter (between 1 and 720 - 30 days)
+            if ($hours < 1 || $hours > 720) {
+                return [
+                    'status' => 'error',
+                    'message' => 'Invalid time range specified (must be between 1 and 720 hours)'
+                ];
+            }
+            
             $endTime = time();
             $startTime = $endTime - ($hours * 3600);
             
@@ -43,6 +52,7 @@ class IncidentReportController extends ApiControllerBase
                 ];
                 
             } catch (\Exception $e) {
+                error_log("Incident report generation error: " . $e->getMessage());
                 return [
                     'status' => 'error',
                     'message' => 'Failed to generate report: ' . $e->getMessage()
@@ -62,20 +72,35 @@ class IncidentReportController extends ApiControllerBase
         $reportDir = '/var/llm_assistant/reports/';
         
         if (is_dir($reportDir)) {
-            $files = glob($reportDir . '*.json');
+            $files = @glob($reportDir . '*.json');
+            
+            if ($files === false) {
+                return [
+                    'status' => 'error',
+                    'message' => 'Failed to read reports directory'
+                ];
+            }
+            
             foreach ($files as $file) {
-                $data = json_decode(file_get_contents($file), true);
-                if ($data) {
+                $content = @file_get_contents($file);
+                if ($content === false) {
+                    continue;
+                }
+                
+                $data = @json_decode($content, true);
+                if ($data && is_array($data)) {
                     $reports[] = [
                         'id' => basename($file, '.json'),
                         'created' => $data['created'] ?? filemtime($file),
-                        'summary' => $data['summary'] ?? 'No summary available'
+                        'summary' => isset($data['summary']) ? 
+                                    substr($data['summary'], 0, 200) : 
+                                    'No summary available'
                     ];
                 }
             }
         }
         
-        // Sort by creation date
+        // Sort by creation date (newest first)
         usort($reports, function($a, $b) {
             return $b['created'] - $a['created'];
         });
@@ -91,11 +116,38 @@ class IncidentReportController extends ApiControllerBase
      */
     public function getAction($reportId)
     {
-        $reportFile = sprintf('/var/llm_assistant/reports/%s.json', 
-                             preg_replace('/[^a-zA-Z0-9_-]/', '', $reportId));
+        // Sanitize the report ID to prevent directory traversal
+        $sanitizedId = preg_replace('/[^a-zA-Z0-9_-]/', '', $reportId);
+        
+        if (empty($sanitizedId)) {
+            return [
+                'status' => 'error',
+                'message' => 'Invalid report ID'
+            ];
+        }
+        
+        $reportFile = sprintf('/var/llm_assistant/reports/%s.json', $sanitizedId);
+        
+        // Additional security check: ensure the path is within the reports directory
+        $realPath = realpath(dirname($reportFile));
+        $expectedPath = realpath('/var/llm_assistant/reports');
+        
+        if ($realPath !== $expectedPath) {
+            return [
+                'status' => 'error',
+                'message' => 'Invalid report path'
+            ];
+        }
         
         if (file_exists($reportFile)) {
             $report = json_decode(file_get_contents($reportFile), true);
+            if ($report === null) {
+                return [
+                    'status' => 'error',
+                    'message' => 'Invalid report format'
+                ];
+            }
+            
             return [
                 'status' => 'success',
                 'report' => $report
@@ -114,8 +166,11 @@ class IncidentReportController extends ApiControllerBase
     private function saveReport($report)
     {
         $reportDir = '/var/llm_assistant/reports/';
+        
         if (!is_dir($reportDir)) {
-            mkdir($reportDir, 0700, true);
+            if (!@mkdir($reportDir, 0700, true)) {
+                throw new \Exception('Failed to create reports directory');
+            }
         }
         
         $reportId = date('Ymd_His') . '_' . uniqid();
@@ -123,8 +178,42 @@ class IncidentReportController extends ApiControllerBase
         $report['id'] = $reportId;
         
         $reportFile = $reportDir . $reportId . '.json';
-        file_put_contents($reportFile, json_encode($report, JSON_PRETTY_PRINT));
+        $jsonData = json_encode($report, JSON_PRETTY_PRINT);
+        
+        if ($jsonData === false) {
+            throw new \Exception('Failed to encode report data');
+        }
+        
+        if (@file_put_contents($reportFile, $jsonData, LOCK_EX) === false) {
+            throw new \Exception('Failed to save report to disk');
+        }
+        
+        // Clean up old reports (keep last 100)
+        $this->cleanupOldReports($reportDir, 100);
         
         return $reportId;
+    }
+    
+    /**
+     * Clean up old report files
+     */
+    private function cleanupOldReports($reportDir, $keepCount = 100)
+    {
+        $files = @glob($reportDir . '*.json');
+        
+        if ($files === false || count($files) <= $keepCount) {
+            return;
+        }
+        
+        // Sort by modification time (oldest first)
+        usort($files, function($a, $b) {
+            return filemtime($a) - filemtime($b);
+        });
+        
+        // Delete oldest files
+        $deleteCount = count($files) - $keepCount;
+        for ($i = 0; $i < $deleteCount; $i++) {
+            @unlink($files[$i]);
+        }
     }
 }

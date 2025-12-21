@@ -51,24 +51,33 @@ class IncidentReportService
         $logFile = $this->logPath . 'latest.log';
         
         // Read log file (simplified - in production use log parsing library)
-        if (file_exists($logFile)) {
-            $cmd = sprintf(
-                'clog %s | grep -E "^%s|^%s" | tail -n 10000',
-                escapeshellarg($logFile),
-                date('M d', $startTime),
-                date('M d', $endTime)
-            );
+        if (!file_exists($logFile)) {
+            return $logs;
+        }
+        
+        $cmd = sprintf(
+            'clog %s 2>/dev/null | grep -E "^%s|^%s" | tail -n 10000',
+            escapeshellarg($logFile),
+            date('M d', $startTime),
+            date('M d', $endTime)
+        );
+        
+        $output = @shell_exec($cmd);
+        
+        if (empty($output)) {
+            return $logs;
+        }
+        
+        $lines = explode("\n", $output);
+        
+        foreach ($lines as $line) {
+            if (empty($line)) {
+                continue;
+            }
             
-            $output = shell_exec($cmd);
-            $lines = explode("\n", $output);
-            
-            foreach ($lines as $line) {
-                if (empty($line)) continue;
-                
-                $parsed = $this->parseLogLine($line);
-                if ($parsed && $parsed['timestamp'] >= $startTime && $parsed['timestamp'] <= $endTime) {
-                    $logs[] = $parsed;
-                }
+            $parsed = $this->parseLogLine($line);
+            if ($parsed && $parsed['timestamp'] >= $startTime && $parsed['timestamp'] <= $endTime) {
+                $logs[] = $parsed;
             }
         }
         
@@ -233,13 +242,13 @@ class IncidentReportService
     private function detectBruteForce($logs)
     {
         $attempts = [];
-        $bruteForcePoRts = ['22', '3389', '21', '23'];
+        $bruteForcePorts = ['22', '3389', '21', '23'];
         $threshold = 10; // attempts per minute
         
         // Group by source, port, and minute
         $activity = [];
         foreach ($logs as $log) {
-            if ($log['action'] === 'block' && in_array($log['dst_port'], $bruteForcePoRts)) {
+            if ($log['action'] === 'block' && in_array($log['dst_port'], $bruteForcePorts)) {
                 $minute = floor($log['timestamp'] / 60);
                 $key = $log['src_ip'] . ':' . $log['dst_port'] . ':' . $minute;
                 $activity[$key] = ($activity[$key] ?? 0) + 1;

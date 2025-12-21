@@ -21,14 +21,25 @@ class WidgetController extends ApiControllerBase
     {
         $model = new LLMAssistant();
         
-        return [
+        $status = [
             'configured' => $model->isConfigured(),
+            'enabled' => (string)$model->general->enabled === '1',
+            'provider' => (string)$model->general->api_provider,
+            'model' => (string)$model->general->model_name,
             'features' => [
                 'natural_language' => true,
                 'continuous_learning' => true,
-                'multi_model' => true
-            ]
+                'multi_model' => true,
+                'config_review' => $model->isFeatureEnabled('config_review'),
+                'incident_reports' => $model->isFeatureEnabled('incident_reports'),
+                'rule_assistant' => $model->isFeatureEnabled('rule_assistant'),
+                'learning_mode' => $model->isFeatureEnabled('learning_mode')
+            ],
+            'rate_limit' => $model->getRateLimit(),
+            'version' => '1.0.0'
         ];
+        
+        return $status;
     }
     
     /**
@@ -184,17 +195,31 @@ class WidgetController extends ApiControllerBase
             return ['status' => 'error', 'message' => 'Invalid request method'];
         }
         
-        $interactionId = $this->request->getPost('interaction_id', 'int');
-        $feedback = $this->request->getPost('feedback', 'string');
+        $interactionId = $this->request->getPost('interaction_id', 'int', 0);
+        $feedback = $this->request->getPost('feedback', 'string', '');
         $applied = $this->request->getPost('applied', 'int', 0);
+        
+        // Validate inputs
+        if ($interactionId <= 0) {
+            return ['status' => 'error', 'message' => 'Invalid interaction ID'];
+        }
+        
+        $validFeedback = ['helpful', 'not_helpful'];
+        if (!in_array($feedback, $validFeedback)) {
+            return ['status' => 'error', 'message' => 'Invalid feedback value'];
+        }
         
         try {
             $orchestrator = new OrchestrationService();
             $orchestrator->provideFeedback($interactionId, $feedback, $applied);
             
-            return ['status' => 'success'];
+            return [
+                'status' => 'success',
+                'message' => 'Thank you for your feedback!'
+            ];
             
         } catch (\Exception $e) {
+            error_log("Failed to record feedback: " . $e->getMessage());
             return ['status' => 'error', 'message' => 'Failed to record feedback'];
         }
     }

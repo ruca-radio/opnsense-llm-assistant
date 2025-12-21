@@ -82,14 +82,14 @@ class LLMService
         $systemPrompt = "You are a security assistant for OPNsense firewall. ";
         $systemPrompt .= "Provide clear, actionable advice. ";
         $systemPrompt .= "Always prioritize security best practices. ";
-        $systemPrompt .= "Be concise and technically accurate.\\n\\n";
+        $systemPrompt .= "Be concise and technically accurate.\n\n";
         
         if (!empty($context)) {
-            $systemPrompt .= "Context:\\n";
+            $systemPrompt .= "Context:\n";
             foreach ($context as $key => $value) {
-                $systemPrompt .= "$key: $value\\n";
+                $systemPrompt .= "$key: $value\n";
             }
-            $systemPrompt .= "\\n";
+            $systemPrompt .= "\n";
         }
         
         return $systemPrompt . "User Query: " . $prompt;
@@ -117,6 +117,87 @@ class LLMService
         ];
         
         return $this->curlRequest($endpoint . '/chat/completions', $headers, $data);
+    }
+    
+    /**
+     * Send request to OpenAI
+     */
+    private function sendOpenAIRequest($endpoint, $apiKey, $model, $prompt, $maxTokens, $temperature)
+    {
+        $headers = [
+            'Authorization: Bearer ' . $apiKey,
+            'Content-Type: application/json'
+        ];
+        
+        $data = [
+            'model' => $model,
+            'messages' => [
+                ['role' => 'user', 'content' => $prompt]
+            ],
+            'max_tokens' => $maxTokens,
+            'temperature' => $temperature
+        ];
+        
+        $url = $endpoint ?: 'https://api.openai.com/v1';
+        return $this->curlRequest($url . '/chat/completions', $headers, $data);
+    }
+    
+    /**
+     * Send request to Anthropic
+     */
+    private function sendAnthropicRequest($endpoint, $apiKey, $model, $prompt, $maxTokens, $temperature)
+    {
+        $headers = [
+            'x-api-key: ' . $apiKey,
+            'Content-Type: application/json',
+            'anthropic-version: 2023-06-01'
+        ];
+        
+        $data = [
+            'model' => $model,
+            'messages' => [
+                ['role' => 'user', 'content' => $prompt]
+            ],
+            'max_tokens' => $maxTokens,
+            'temperature' => $temperature
+        ];
+        
+        $url = $endpoint ?: 'https://api.anthropic.com/v1';
+        $response = $this->curlRequest($url . '/messages', $headers, $data);
+        
+        // Anthropic has different response format
+        if (isset($response['content']) && is_array($response['content'])) {
+            return $response['content'][0]['text'] ?? 
+                   throw new \Exception("Unexpected Anthropic response format");
+        }
+        
+        throw new \Exception("Invalid Anthropic response");
+    }
+    
+    /**
+     * Send request to local model (Ollama)
+     */
+    private function sendLocalRequest($endpoint, $model, $prompt, $maxTokens, $temperature)
+    {
+        $headers = [
+            'Content-Type: application/json'
+        ];
+        
+        $data = [
+            'model' => $model,
+            'prompt' => $prompt,
+            'options' => [
+                'num_predict' => $maxTokens,
+                'temperature' => $temperature
+            ],
+            'stream' => false
+        ];
+        
+        $url = $endpoint ?: 'http://localhost:11434';
+        $result = $this->curlRequest($url . '/api/generate', $headers, $data);
+        
+        return $result['response'] ?? 
+               throw new \Exception("Unexpected local model response format");
     }
     
     /**
@@ -162,11 +243,24 @@ class LLMService
 class RateLimiter
 {
     private $storageFile = '/tmp/llm_rate_limit.json';
+    private $lockFile = '/tmp/llm_rate_limit.lock';
     
     public function checkLimit($maxPerMinute)
     {
         $now = time();
         $minute = floor($now / 60);
+        
+        // Use file locking to prevent race conditions
+        $lockFp = fopen($this->lockFile, 'c');
+        if (!$lockFp) {
+            // If we can't get a lock, fail open (allow request)
+            return true;
+        }
+        
+        if (!flock($lockFp, LOCK_EX)) {
+            fclose($lockFp);
+            return true;
+        }
         
         $data = $this->loadData();
         
@@ -180,12 +274,17 @@ class RateLimiter
         // Check current minute
         $currentCount = $data[$minute] ?? 0;
         if ($currentCount >= $maxPerMinute) {
+            flock($lockFp, LOCK_UN);
+            fclose($lockFp);
             return false;
         }
         
         // Increment and save
         $data[$minute] = $currentCount + 1;
         $this->saveData($data);
+        
+        flock($lockFp, LOCK_UN);
+        fclose($lockFp);
         
         return true;
     }
@@ -195,12 +294,19 @@ class RateLimiter
         if (!file_exists($this->storageFile)) {
             return [];
         }
-        return json_decode(file_get_contents($this->storageFile), true) ?: [];
+        
+        $content = @file_get_contents($this->storageFile);
+        if ($content === false) {
+            return [];
+        }
+        
+        $data = @json_decode($content, true);
+        return is_array($data) ? $data : [];
     }
     
     private function saveData($data)
     {
-        file_put_contents($this->storageFile, json_encode($data));
+        @file_put_contents($this->storageFile, json_encode($data), LOCK_EX);
     }
 }
 
@@ -228,16 +334,36 @@ class AuditLogger
     
     private function log($type, $feature, $data)
     {
+        $username = 'system';
+        $ipAddress = 'local';
+        
+        // Safely get session username if available
+        if (session_status() === PHP_SESSION_ACTIVE && isset($_SESSION['Username'])) {
+            $username = $_SESSION['Username'];
+        }
+        
+        // Safely get remote IP if available
+        if (isset($_SERVER['REMOTE_ADDR'])) {
+            $ipAddress = $_SERVER['REMOTE_ADDR'];
+        }
+        
         $entry = [
             'timestamp' => date('Y-m-d H:i:s'),
             'type' => $type,
             'feature' => $feature,
-            'user' => $_SESSION['Username'] ?? 'system',
-            'ip' => $_SERVER['REMOTE_ADDR'] ?? 'local',
+            'user' => $username,
+            'ip' => $ipAddress,
             'data' => $data
         ];
         
         $line = json_encode($entry) . PHP_EOL;
-        file_put_contents($this->logFile, $line, FILE_APPEND | LOCK_EX);
+        
+        // Ensure log directory exists
+        $logDir = dirname($this->logFile);
+        if (!is_dir($logDir)) {
+            @mkdir($logDir, 0700, true);
+        }
+        
+        @file_put_contents($this->logFile, $line, FILE_APPEND | LOCK_EX);
     }
 }

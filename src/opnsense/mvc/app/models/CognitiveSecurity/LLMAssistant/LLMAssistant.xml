@@ -27,6 +27,12 @@
                 <default>https://openrouter.ai/api/v1</default>
                 <Required>N</Required>
                 <ValidationMessage>Must be a valid URL</ValidationMessage>
+                <Constraints>
+                    <check001>
+                        <ValidationMessage>Please enter a valid URL</ValidationMessage>
+                        <type>Url</type>
+                    </check001>
+                </Constraints>
             </api_endpoint>
             <model_name type="TextField">
                 <default>anthropic/claude-3-haiku</default>
@@ -42,6 +48,14 @@
                 <default>0.3</default>
                 <Required>Y</Required>
                 <ValidationMessage>Must be between 0 and 1</ValidationMessage>
+                <Constraints>
+                    <check001>
+                        <ValidationMessage>Temperature must be between 0.0 and 1.0</ValidationMessage>
+                        <type>MinMaxValue</type>
+                        <minValue>0.0</minValue>
+                        <maxValue>1.0</maxValue>
+                    </check001>
+                </Constraints>
             </temperature>
         </general>
         <features>

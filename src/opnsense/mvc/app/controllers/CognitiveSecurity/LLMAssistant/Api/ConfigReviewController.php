@@ -27,6 +27,15 @@ class ConfigReviewController extends ApiControllerBase
             
             $section = $this->request->getPost('section', 'string', 'all');
             
+            // Validate section parameter
+            $validSections = ['all', 'rules', 'interfaces', 'nat'];
+            if (!in_array($section, $validSections)) {
+                return [
+                    'status' => 'error',
+                    'message' => 'Invalid section specified'
+                ];
+            }
+            
             try {
                 $service = new ConfigReviewService();
                 $review = $service->reviewConfiguration($section);
@@ -37,6 +46,7 @@ class ConfigReviewController extends ApiControllerBase
                 ];
                 
             } catch (\Exception $e) {
+                error_log("Config review error: " . $e->getMessage());
                 return [
                     'status' => 'error',
                     'message' => 'Failed to review configuration: ' . $e->getMessage()
