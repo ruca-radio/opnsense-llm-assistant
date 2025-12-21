@@ -21,6 +21,9 @@ PLUGIN_VENDOR="CognitiveSecurity"
 OPNSENSE_BASE="/usr/local"
 MVC_PATH="${OPNSENSE_BASE}/opnsense/mvc/app"
 
+# Global backup directory variable
+BACKUP_DIR=""
+
 echo_info() {
     echo "${GREEN}[INFO]${NC} $1"
 }

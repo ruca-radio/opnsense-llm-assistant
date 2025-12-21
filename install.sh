@@ -22,7 +22,7 @@ PLUGIN_VERSION="1.0.0"
 # Installation paths
 OPNSENSE_BASE="/usr/local"
 MVC_PATH="${OPNSENSE_BASE}/opnsense/mvc/app"
-SRC_PATH="$(dirname $(realpath $0))/src/opnsense/mvc/app"
+SRC_PATH="$(dirname "$(realpath "$0")")/src/opnsense/mvc/app"
 
 echo_info() {
     echo "${GREEN}[INFO]${NC} $1"
@@ -139,23 +139,43 @@ install_files() {
     
     # Copy controllers
     echo_info "Installing controllers..."
-    cp -r "${SRC_PATH}/controllers/${PLUGIN_VENDOR}/LLMAssistant/"* \
-        "${MVC_PATH}/controllers/${PLUGIN_VENDOR}/LLMAssistant/" 2>/dev/null || true
+    if [ -d "${SRC_PATH}/controllers/${PLUGIN_VENDOR}/LLMAssistant" ]; then
+        cp -r "${SRC_PATH}/controllers/${PLUGIN_VENDOR}/LLMAssistant/"* \
+            "${MVC_PATH}/controllers/${PLUGIN_VENDOR}/LLMAssistant/" || {
+            echo_error "Failed to copy controllers"
+            exit 1
+        }
+    fi
     
     # Copy models
     echo_info "Installing models..."
-    cp -r "${SRC_PATH}/models/${PLUGIN_VENDOR}/LLMAssistant/"* \
-        "${MVC_PATH}/models/${PLUGIN_VENDOR}/LLMAssistant/" 2>/dev/null || true
+    if [ -d "${SRC_PATH}/models/${PLUGIN_VENDOR}/LLMAssistant" ]; then
+        cp -r "${SRC_PATH}/models/${PLUGIN_VENDOR}/LLMAssistant/"* \
+            "${MVC_PATH}/models/${PLUGIN_VENDOR}/LLMAssistant/" || {
+            echo_error "Failed to copy models"
+            exit 1
+        }
+    fi
     
     # Copy libraries
     echo_info "Installing libraries..."
-    cp -r "${SRC_PATH}/library/${PLUGIN_VENDOR}/LLMAssistant/"* \
-        "${MVC_PATH}/library/${PLUGIN_VENDOR}/LLMAssistant/" 2>/dev/null || true
+    if [ -d "${SRC_PATH}/library/${PLUGIN_VENDOR}/LLMAssistant" ]; then
+        cp -r "${SRC_PATH}/library/${PLUGIN_VENDOR}/LLMAssistant/"* \
+            "${MVC_PATH}/library/${PLUGIN_VENDOR}/LLMAssistant/" || {
+            echo_error "Failed to copy libraries"
+            exit 1
+        }
+    fi
     
     # Copy views
     echo_info "Installing views..."
-    cp -r "${SRC_PATH}/views/${PLUGIN_VENDOR}/LLMAssistant/"* \
-        "${MVC_PATH}/views/${PLUGIN_VENDOR}/LLMAssistant/" 2>/dev/null || true
+    if [ -d "${SRC_PATH}/views/${PLUGIN_VENDOR}/LLMAssistant" ]; then
+        cp -r "${SRC_PATH}/views/${PLUGIN_VENDOR}/LLMAssistant/"* \
+            "${MVC_PATH}/views/${PLUGIN_VENDOR}/LLMAssistant/" || {
+            echo_error "Failed to copy views"
+            exit 1
+        }
+    fi
     
     # Copy dashboard widget if it exists
     if [ -f "${SRC_PATH}/views/OPNsense/Core/dashboard_widget.volt" ]; then
