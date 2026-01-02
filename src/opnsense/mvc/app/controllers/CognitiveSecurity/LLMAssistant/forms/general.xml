@@ -69,7 +69,7 @@
             <id>llmassistant.features.learning_mode</id>
             <label>Learning Mode</label>
             <type>checkbox</type>
-            <help>Enable Q&A learning assistant</help>
+            <help>Enable Q&amp;A learning assistant</help>
         </field>
     </tab>
     <tab id="security" description="Security Settings">
